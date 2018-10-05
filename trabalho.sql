@@ -77,3 +77,14 @@ CREATE TABLE consumo_semanal (
   CONSTRAINT `bomba_cs_fk` FOREIGN KEY (`bomba_id`) REFERENCES
   bomba(id) ON DELETE CASCADE ON UPDATE CASCADE
 );
+
+CREATE TRIGGER atualiza_contador_bomba AFTER INSERT ON vendas_diarias (
+  FOR EACH ROW
+  BEGIN
+    set @qtd = NEW.qtd_litros;
+    set @id_bomba = NEW.bomba_id;
+    UPDATE bomba SET litros_vendidos = litros_vendidos + @qtd
+    WHERE id = @id_bomba;
+  END
+);
+
