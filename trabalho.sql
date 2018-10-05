@@ -164,4 +164,56 @@ VALUES ('1313131313', 'GA01', 2342342);
 INSERT INTO bomba (id, tanque_id, litros_vendidos)
 VALUES ('1414141414', 'GA01', 2312);
 
+DELIMITER $$
+CREATE TRIGGER atualiza_contador_bomba 
+AFTER INSERT ON vendas_diarias FOR EACH ROW 
+BEGIN UPDATE bomba SET litros_vendidos = litros_vendidos + NEW.qtd_litros WHERE id = NEW.bomba_id; 
+END $$
+DELIMITER ;
+
+DELIMITER $$
+ 
+CREATE PROCEDURE checar_estoque(IN id_combustivel BIGINT)
+BEGIN
+	DECLARE done INT DEFAULT FALSE;
+    DECLARE quantidade_necessaria DECIMAL(8,2) DEFAULT FALSE;
+	DECLARE cursor_VAL DECIMAL(8,2);
+    DECLARE cursor_ID BIGINT;
+    DECLARE cursor_estoque_minimo DECIMAL(8,2);
+    DECLARE cursor_capacidade_maxima DECIMAL(8,2);
+    DECLARE cursor_preco_litro DECIMAL(3,2);
+    DECLARE cursor_aliquota DECIMAL(2,2);
+    DECLARE cursor_tipo VARCHAR(30);
+	DECLARE cursor_i CURSOR FOR 
+      SELECT 
+		SUM(volume_atual), combustivel_id, 
+		tipo, estoque_minimo, 
+		preco_litro, aliquota,
+		SUM(capacidade_maxima)  from tanque
+		INNER JOIN tipo_combustivel ON tanque.combustivel_id = tipo_combustivel.id
+		GROUP BY combustivel_id;
+	DECLARE CONTINUE HANDLER FOR NOT FOUND SET done = TRUE;
+    OPEN cursor_i;
+	  read_loop: LOOP
+		FETCH cursor_i INTO 
+          cursor_VAL, cursor_ID, 
+          cursor_tipo, cursor_estoque_minimo, 
+          cursor_preco_litro, cursor_aliquota,
+          cursor_capacidade_maxima;
+        IF done THEN
+			LEAVE read_loop;
+		END IF;
+		IF cursor_VAL > cursor_estoque_minimo THEN
+          INSERT INTO entrega (
+          combustivel_id, quantidade,
+          valor_por_litro, valor_total_compra) VALUES (
+          cursor_ID, (cursor_capacidade_maxima - cursor_VAL),
+          (cursor_preco_litro - cursor_preco_litro * cursor_aliquota), 
+          (cursor_capacidade_maxima - cursor_VAL) * (cursor_preco_litro - cursor_preco_litro * cursor_aliquota)
+          );
+        END IF;
+	  END LOOP;
+	CLOSE cursor_i;
+END $$
+DELIMITER ;
 
