@@ -1,10 +1,3 @@
-/*
- * Quando precisar, o Sr. Chiquinho deve ser capaz de alterar os impostos ou as alíquotas 
- * referentes ao relatório anterior, ou seja, a informação contida nos relatórios deve ser 
- * persistida no banco de dados de modo que possa ser modificada.
- * (quando a gente alterar a alíquota ele dá update nos relatórios anteriores)
- */
-
 create database PostoDoChiquinho;
 
 use PostoDoChiquinho;
@@ -167,29 +160,31 @@ VALUES ('1414141414', 'GA01', 2312);
 DELIMITER $$
 CREATE TRIGGER atualiza_contador_bomba 
 AFTER INSERT ON vendas_diarias FOR EACH ROW 
-BEGIN UPDATE bomba SET litros_vendidos = litros_vendidos + NEW.qtd_litros WHERE id = NEW.bomba_id; 
+BEGIN 
+  UPDATE bomba
+  SET litros_vendidos = litros_vendidos + NEW.qtd_litros 
+  WHERE id = NEW.bomba_id; 
 END $$
 DELIMITER ;
 
 DELIMITER $$
- 
 CREATE PROCEDURE checar_estoque(IN id_combustivel BIGINT)
 BEGIN
 	DECLARE done INT DEFAULT FALSE;
-    DECLARE quantidade_necessaria DECIMAL(8,2) DEFAULT FALSE;
+  DECLARE quantidade_necessaria DECIMAL(8,2) DEFAULT FALSE;
 	DECLARE cursor_VAL DECIMAL(8,2);
-    DECLARE cursor_ID BIGINT;
-    DECLARE cursor_estoque_minimo DECIMAL(8,2);
-    DECLARE cursor_capacidade_maxima DECIMAL(8,2);
-    DECLARE cursor_preco_litro DECIMAL(3,2);
-    DECLARE cursor_aliquota DECIMAL(2,2);
-    DECLARE cursor_tipo VARCHAR(30);
+  DECLARE cursor_ID BIGINT;
+  DECLARE cursor_estoque_minimo DECIMAL(8,2);
+  DECLARE cursor_capacidade_maxima DECIMAL(8,2);
+  DECLARE cursor_preco_litro DECIMAL(3,2);
+  DECLARE cursor_aliquota DECIMAL(2,2);
+  DECLARE cursor_tipo VARCHAR(30);
 	DECLARE cursor_i CURSOR FOR 
-      SELECT 
-		SUM(volume_atual), combustivel_id, 
-		tipo, estoque_minimo, 
-		preco_litro, aliquota,
-		SUM(capacidade_maxima)  from tanque
+    SELECT 
+		  SUM(volume_atual), combustivel_id, 
+		  tipo, estoque_minimo, 
+		  preco_litro, aliquota,
+		  SUM(capacidade_maxima)  from tanque
 		INNER JOIN tipo_combustivel ON tanque.combustivel_id = tipo_combustivel.id
 		GROUP BY combustivel_id;
 	DECLARE CONTINUE HANDLER FOR NOT FOUND SET done = TRUE;
@@ -201,19 +196,62 @@ BEGIN
           cursor_preco_litro, cursor_aliquota,
           cursor_capacidade_maxima;
         IF done THEN
-			LEAVE read_loop;
-		END IF;
+			    LEAVE read_loop;
+		    END IF;
 		IF cursor_VAL > cursor_estoque_minimo THEN
           INSERT INTO entrega (
           combustivel_id, quantidade,
-          valor_por_litro, valor_total_compra) VALUES (
+          valor_por_litro, valor_total_compra) 
+          VALUES (
           cursor_ID, (cursor_capacidade_maxima - cursor_VAL),
           (cursor_preco_litro - cursor_preco_litro * cursor_aliquota), 
           (cursor_capacidade_maxima - cursor_VAL) * (cursor_preco_litro - cursor_preco_litro * cursor_aliquota)
           );
-        END IF;
+    END IF;
 	  END LOOP;
 	CLOSE cursor_i;
+END
+$$
+DELIMITER ;
+
+DELIMITER $$
+CREATE TRIGGER atualiza_volume_tanque
+BEFORE INSERT ON combustivel_tanque FOR EACH ROW 
+BEGIN 
+  DECLARE volume_atual_tq DECIMAL(8,2);
+  DECLARE capacidade_total_tq DECIMAL(8,2);
+  SELECT 
+	  volume_atual, capacidade_maxima FROM tanque WHERE id = NEW.tanque_id
+    INTO volume_atual_tq, capacidade_total_tq;
+	IF volume_atual_tq + NEW.quantidade > capacidade_total_tq THEN
+      SIGNAL SQLSTATE '45000'
+        SET MESSAGE_TEXT = 'Excede capacidade do tanque', MYSQL_ERRNO = 1001;
+	END IF;
 END $$
 DELIMITER ;
 
+DELIMITER $$
+CREATE PROCEDURE relatorio_semanal(IN data_inicio DATETIME, IN data_fim DATETIME)
+BEGIN
+	DECLARE total DECIMAL(10,2);
+  DECLARE bomb_id VARCHAR(10);
+  DECLARE done INT DEFAULT FALSE;
+  DECLARE cursor_i CURSOR FOR 
+    SELECT sum(qtd_litros), bomb_id from vendas_diarias where 
+		data_venda >= data_inicio and 
+		data_venda <= data_fim group by bomba_id;
+	DECLARE CONTINUE HANDLER FOR NOT FOUND SET done = TRUE;
+    OPEN cursor_i;
+	  read_loop: LOOP
+		FETCH cursor_i INTO 
+          total, bomb_id;
+        IF done THEN
+			LEAVE read_loop;
+		END IF;
+	INSERT INTO consumo_semanal (inicio_semana, final_semana, qtd_litros, bomba_id)
+    VALUES (data_inicio, data_fim, total, bomb_id);
+    END LOOP;
+	CLOSE cursor_i;
+END
+$$
+DELIMITER ;
