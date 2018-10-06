@@ -157,6 +157,13 @@ VALUES ('1313131313', 'GA01', 2342342);
 INSERT INTO bomba (id, tanque_id, litros_vendidos)
 VALUES ('1414141414', 'GA01', 2312);
 
+/*
+  As bombas de combustível são ligadas aos tanques, cada bomba está ligada a um tanque,
+  mas um tanque pode estar ligado a várias bombas. Cada bomba é identificada por um
+  número de série de 10 dígitos e tem um contador que determina a quantidade de
+  litros vendida desde sua instalação.
+*/
+
 DELIMITER $$
 CREATE TRIGGER atualiza_contador_bomba 
 AFTER INSERT ON vendas_diarias FOR EACH ROW 
@@ -166,6 +173,14 @@ BEGIN
   WHERE id = NEW.bomba_id; 
 END $$
 DELIMITER ;
+
+/*
+  Caso algum combustível fique abaixo do estoque mínimo no final
+  do dia, o sistema deve gerar automaticamente um pedido de compra 
+  para a empresa distribuidora. Esse pedido contém o tipo de combustível 
+  e a quantidade a ser comprada (assuma sempre que o tanque deve sempre 
+  estar cheio), além do valor por litro e o valor total da compra.
+*/
 
 DELIMITER $$
 CREATE PROCEDURE checar_estoque(IN id_combustivel BIGINT)
@@ -214,6 +229,15 @@ END
 $$
 DELIMITER ;
 
+/*
+  Quando o caminhão de distribuição chega, o Sr. Chiquinho deve colocar no
+  sistema quantos litros de cada combustível foram colocados em cada tanque, além da
+  data da entrega. Caso sejam colocados mais litros que o tanque é capaz de armazenar, 
+  o sistema deve gerar um erro e não permitir o registro. Repare que a quantidade 
+  máxima a ser colocada é a capacidade do tanque diminuída do resíduo de combustível 
+  que o tanque ainda armazena.
+*/
+
 DELIMITER $$
 CREATE TRIGGER atualiza_volume_tanque
 BEFORE INSERT ON combustivel_tanque FOR EACH ROW 
@@ -229,6 +253,12 @@ BEGIN
 	END IF;
 END $$
 DELIMITER ;
+
+/*
+  No final de cada dia, o sistema deve gerar uma lista de consumo de
+  combustível do dia. Na sexta-feira, além do consumo do dia, o sistema deve gerar um
+  relatório agregado com os últimos 7 dias. Todas essas informações devem ser persistidas no banco de dados.
+*/
 
 DELIMITER $$
 CREATE PROCEDURE relatorio_semanal(IN data_inicio DATETIME, IN data_fim DATETIME)
